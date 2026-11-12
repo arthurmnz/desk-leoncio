@@ -14,9 +14,51 @@ import time
 import paho.mqtt.client as mqtt
 import psutil
 
+
+def carregar_env(caminho_env=None):
+    """Carrega variáveis de um arquivo .env para os.environ caso ainda não definidas."""
+    if caminho_env is None:
+        dir_script = os.path.dirname(os.path.abspath(__file__))
+        candidatos = [
+            os.path.join(dir_script, ".env"),
+            os.path.join(os.getcwd(), ".env"),
+            os.path.join(os.path.dirname(dir_script), ".env"),
+        ]
+        for c in candidatos:
+            if os.path.isfile(c):
+                caminho_env = c
+                break
+
+    if not caminho_env or not os.path.isfile(caminho_env):
+        return
+
+    try:
+        with open(caminho_env, "r", encoding="utf-8") as f:
+            for linha in f:
+                linha = linha.strip()
+                if not linha or linha.startswith("#"):
+                    continue
+                if linha.startswith("export "):
+                    linha = linha[7:].strip()
+                if "=" not in linha:
+                    continue
+                chave, valor = linha.split("=", 1)
+                chave = chave.strip()
+                valor = valor.strip()
+                if len(valor) >= 2 and ((valor[0] == '"' and valor[-1] == '"') or (valor[0] == "'" and valor[-1] == "'")):
+                    valor = valor[1:-1]
+                if chave and chave not in os.environ:
+                    os.environ[chave] = valor
+    except Exception as e:
+        print(f"Aviso: erro ao carregar {caminho_env}: {e}")
+
+
+carregar_env()
+
 BROKER = os.environ.get("DESKBOT_BROKER", "192.168.0.5")  # <- IP do homelab
 WINDOWS = sys.platform == "win32"
-NOME = sys.argv[1] if len(sys.argv) > 1 else ("windows" if WINDOWS else "cachyos")
+padrao_nome = "windows" if WINDOWS else "cachyos"
+NOME = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("DESKBOT_NOME", padrao_nome)
 TOPICO = f"desk/pc/{NOME}/activity"
 
 SEGUNDOS_AUSENTE = 300  # sem teclado/mouse por 5 min = ausente (só Windows)
@@ -114,13 +156,66 @@ def detectar():
     return estado, primeiro
 
 
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    if hasattr(reason_code, "is_failure"):
+        falha = reason_code.is_failure
+    else:
+        falha = (reason_code != 0)
+
+    if not falha:
+        print(f"✓ Broker conectado com sucesso em {BROKER}:1883 (tópico: {TOPICO})")
+    else:
+        print(f"✗ Falha ao conectar ao broker MQTT em {BROKER}:1883 - Código: {reason_code}")
+        print("  Dicas para resolução:")
+        print(f"  1. Verifique se o IP informado em DESKBOT_BROKER ({BROKER}) no seu .env está correto.")
+        print("  2. Verifique se o broker Mosquitto está ativo no homelab.")
+        print("  3. Verifique se a porta 1883 está liberada no firewall do homelab e do PC.")
+
+
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties=None):
+    if hasattr(reason_code, "is_failure"):
+        falha = reason_code.is_failure
+    else:
+        falha = (reason_code != 0)
+
+    if falha:
+        print(f"⚠ Conexão perdida com o broker MQTT ({BROKER}:1883) - Motivo: {reason_code}")
+        print("  Dicas para resolução:")
+        print(f"  1. Verifique se o homelab ({BROKER}) está ligado e conectado na mesma rede.")
+        print("  2. Verifique se o serviço Mosquitto permanece ativo.")
+        print("  3. Verifique se a porta 1883 não está sendo bloqueada.")
+        print("  Tentando reconectar automaticamente...")
+    else:
+        print(f"Desconectado do broker MQTT ({BROKER}:1883) normalmente.")
+
+
 def main():
     c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"deskbot-{NOME}")
+    c.on_connect = on_connect
+    c.on_disconnect = on_disconnect
+
     # Se este PC cair/desligar sem avisar, o broker publica isso por nós
     c.will_set(TOPICO, json.dumps({"state": "OFFLINE"}), retain=True)
-    c.connect(BROKER, 1883, 60)
+
+    print(f"Iniciando agente DeskBot '{NOME}'...")
+    print(f"Conectando ao broker MQTT em {BROKER}:1883 (tópico: {TOPICO})...")
+
+    try:
+        c.connect(BROKER, 1883, 60)
+    except Exception as e:
+        print(f"✗ Não foi possível conectar de imediato ao broker {BROKER}:1883")
+        print(f"  Erro: {e}")
+        print("  Dicas para resolução:")
+        print(f"  1. Confirme se o IP configurado em DESKBOT_BROKER ({BROKER}) no seu arquivo .env está correto.")
+        print("  2. Verifique se o Mosquitto está em execução no homelab e se a porta 1883 está acessível.")
+        print("  3. Verifique se regras de firewall no homelab ou no PC estão bloqueando a porta 1883.")
+        print("  O agente continuará tentando conectar em segundo plano...")
+        try:
+            c.connect_async(BROKER, 1883, 60)
+        except Exception as e_async:
+            print(f"  Erro ao iniciar conexão assíncrona: {e_async}")
+
     c.loop_start()
-    print(f"Agente '{NOME}' -> {BROKER} ({TOPICO})")
 
     ultimo, t_pub = None, 0.0
     try:
@@ -133,10 +228,16 @@ def main():
                     print(f"estado: {estado}   (janela em foco: {janela or '-'})")
                 ultimo, t_pub = estado, agora
             time.sleep(2)
+    except KeyboardInterrupt:
+        print(f"\nEncerrando agente '{NOME}'...")
     finally:
-        c.publish(TOPICO, json.dumps({"state": "OFFLINE"}), retain=True).wait_for_publish()
+        try:
+            c.publish(TOPICO, json.dumps({"state": "OFFLINE"}), retain=True).wait_for_publish(timeout=3)
+        except Exception:
+            pass
         c.loop_stop()
         c.disconnect()
+        print(f"Agente '{NOME}' finalizado.")
 
 
 if __name__ == "__main__":
