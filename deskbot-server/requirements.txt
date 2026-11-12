@@ -1,0 +1,2 @@
+# Dependências do cérebro que roda no homelab (cerebro.py)
+paho-mqtt>=2.0,<3

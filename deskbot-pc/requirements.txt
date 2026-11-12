@@ -1,0 +1,3 @@
+# Dependências do agente que roda nos PCs (agent_pc.py), Linux e Windows
+paho-mqtt>=2.0,<3
+psutil>=5.9

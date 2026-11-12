@@ -1,0 +1,11 @@
+# Configuração e segredos
+.env
+secrets.h
+
+# Python
+.venv/
+__pycache__/
+
+# Dados gerados no homelab
+dados/
+mosquitto-data/
