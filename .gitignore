@@ -1,5 +1,8 @@
 # Configuração e segredos
 .env
+.env.*
+!.env.example
+!*.example
 secrets.h
 
 # Python
