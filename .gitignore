@@ -9,6 +9,9 @@ secrets.h
 .venv/
 __pycache__/
 
+# PlatformIO / Firmware
+.pio/
+
 # Dados gerados no homelab
 dados/
 mosquitto-data/

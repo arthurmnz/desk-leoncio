@@ -18,6 +18,7 @@ services:
     working_dir: /app
     volumes:
       - ./cerebro.py:/app/cerebro.py:ro
+      - ./deskbot_server:/app/deskbot_server:ro
       - ./dados:/app/dados
     environment:
       - BROKER=mosquitto
