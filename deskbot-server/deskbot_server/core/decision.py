@@ -20,6 +20,10 @@ def escolher_expressao(cerebro, agora_dt=None, agora_ts=None):
     if agora_ts < cerebro.ev_ate and cerebro.ev_expr:
         return cerebro.ev_expr
 
+    # Soneca forçada via interação de toque longo
+    if getattr(cerebro, "soneca_forcada", False):
+        return "dormindo"
+
     tempo_ausente = agora_ts - cerebro.desde
     limiar_dormir = ritmo["tempo_para_dormir"]
 

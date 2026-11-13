@@ -49,4 +49,15 @@ BROKER = os.environ.get("BROKER", "localhost")
 T_PC_WILDCARD = "desk/pc/+/activity"
 T_PC_LEGACY = "desk/pc/activity"
 T_BOT = "desk/bot/state"
+T_WEATHER = "desk/bot/weather"
+T_TIME = "desk/bot/time"
+T_TOUCH = "desk/bot/touch"
 LOG = os.environ.get("LOG", "deskbot_log.csv")
+
+# Configurações de Clima e Usuário
+LATITUDE = float(os.environ.get("LATITUDE", "-23.5505"))
+LONGITUDE = float(os.environ.get("LONGITUDE", "-46.6333"))
+CITY_NAME = os.environ.get("CITY_NAME", "São Paulo")
+WEATHER_INTERVAL = int(os.environ.get("WEATHER_INTERVAL", "900"))
+USER_NAME = os.environ.get("USER_NAME", "Arthur")
+

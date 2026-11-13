@@ -31,10 +31,16 @@ Robô de mesa feito com **ESP32 + tela TFT ILI9341**. Ele mostra um rosto (olhos
 | `desk/pc/cachyos/activity` | PC CachyOS | `{"state": "CODING"}` |
 | `desk/pc/windows/activity` | PC Windows | `{"state": "GAMING"}` |
 | `desk/bot/state` | Cérebro | `{"expr": "jogando", "energy": 0.74, "phase": "tarde_noite"}` |
+| `desk/bot/weather` | Cérebro | `{"temp": 24.2, "apparent_temp": 25.0, "humidity": 65, "condition": "Predom. ensolarado", "city": "São Paulo"}` |
+| `desk/bot/time` | Cérebro | `{"time": "14:35", "date": "13/11/2026", "greeting": "Tarde focada no código!", "period": "tarde"}` |
+| `desk/bot/touch` | ESP32 | `{"event": "tap", "x": 160, "y": 120, "mode": 0, "duration_ms": 110}` |
 
 - Cada PC publica ao mudar de estado e a cada 10 s. Se ele cair ou desligar sem avisar, o broker publica `OFFLINE` por ele (Last Will).
-- O cérebro publica ao mudar de expressão e a cada 15 s (batimento: o ESP32 sabe que o cérebro está vivo).
-- O `client_id` de cada agente é único (`deskbot-windows`, `deskbot-cachyos`). Com ids iguais, o broker derrubaria um dos dois.
+- O cérebro publica estado facial ao mudar e a cada 15 s (batimento: o ESP32 sabe que o cérebro está vivo).
+- O cérebro sincroniza clima a cada 60 s (com cache interno de 15 min na API Open-Meteo) e relógio/saudações a cada 15 s.
+- O ESP32 envia eventos táteis (toque curto / longo) com rate-limit e debounce via `desk/bot/touch`.
+- O `client_id` de cada agente é único (`deskbot-windows`, `deskbot-cachyos`, `deskbot-cerebro`).
+
 
 ### Estados de um PC
 
@@ -108,6 +114,27 @@ O cérebro calcula continuamente a fase do dia e ajusta tetos biológicos e comp
 - **Transições suaves** entre expressões (forma e cor).
 - Continua animado mesmo que o homelab caia.
 
+### Touch Screen Nativo & Máquina de Estados da Tela (XPT2046)
+
+A tela TFT ILI9341 conta com controlador de toque integrado **XPT2046** via SPI compartilhado (`TOUCH_CS` no pino GPIO 5). O firmware implementa uma máquina de estados visual intuitiva:
+
+- **Modo 0: Olhos Expressivos (Padrão 30 fps):**
+  - **Carinho nos Olhos:** Tocar suavemente na região central dos olhos aciona reflexo carinhoso imediato (piscada feliz) e eleva a felicidade interna em **+0.15**.
+  - **Soneca Forçada / Despertar:** Manter o toque por mais de **1.5 s (Long Press)** coloca o DeskBot em modo soneca (`dormindo`, energia=0.05). Outro toque longo ou toque suave acorda o bot revigorado.
+  - **Navegação:** Toque na barra superior ou inferior avança para o Modo 1.
+- **Modo 1: Dashboard Clima & Relógio:**
+  - Mostra horário de alta precisão, data e saudação contextual baseada na rotina (ex: *"Bom dia, Arthur!"*, *"Noite adentro no código"*).
+  - Exibe cartão meteorológico obtido da API **Open-Meteo** no homelab (temperatura, sensação térmica, umidade e condição).
+  - Qualquer toque na tela avança para o Modo 2.
+- **Modo 2: Status do PC & Vitalidade do Robô:**
+  - Exibe o estado consolidado dos PCs (`CODING`, `GAMING`, `MEDIA`, etc.).
+  - Barra de bateria cognitiva / energia do DeskBot e fase circadiana ativa.
+  - Qualquer toque na tela retorna ao Modo 0.
+- **Retorno Automático por Inatividade:** Após 30 segundos sem interação nos modos de dashboard, a tela retorna automaticamente aos Olhos Expressivos.
+- **Debounce & Rate-Limit:** Processamento não-bloqueante com debounce de 40 ms e rate-limit de 250 ms para publicações em `desk/bot/touch`, evitando sobrecarga no MQTT.
+
+> ℹ️ **Nota de Hardware (Servos Pan/Tilt):** A implementação de movimentação mecânica de cabeça via servomotores Pan/Tilt foi **formalmente reclassificada para o Backlog / Fase Futura Opcional de Hardware**, priorizando a rica interatividade tátil nativa da tela, o conhecimento de clima e o ecossistema cognitivo local.
+
 ---
 
 ## Arquivos
@@ -116,16 +143,20 @@ O projeto está organizado em três componentes modulares:
 
 ```
 desk-bot/
+├── docs/                        # Documentação e planos de arquitetura
+│   └── PLANO_DESKBOT_INTERATIVIDADE.md # Especificação completa de hardware, IA e roadmap
+│
 ├── deskbot/                     # Firmware do ESP32 (Arduino / PlatformIO)
 │   ├── deskbot.ino              # Ponto de entrada do sketch Arduino
 │   ├── platformio.ini           # Configuração de build e dependências PlatformIO
 │   ├── config.h                 # Pinos, timeouts e parâmetros visuais
 │   ├── secrets.h.example        # Modelo de credenciais Wi-Fi e broker MQTT
-│   ├── User_Setup.h             # Mapeamento de pinos SPI do TFT_eSPI
+│   ├── User_Setup.h             # Mapeamento de pinos SPI do TFT_eSPI (Display e Touch CS no GPIO 5)
 │   ├── expressions.h / .cpp     # Catálogo e geometria das 10 expressões faciais
-│   ├── display_renderer.h / .cpp# Renderização gráfica na tela ILI9341
-│   ├── animation.h / .cpp       # Camada "viva" (piscar, respiração, olhar)
-│   └── network_manager.h / .cpp # Gerenciamento de Wi-Fi e cliente MQTT
+│   ├── display_renderer.h / .cpp# Renderização gráfica na tela ILI9341 (Modos 0, 1 e 2)
+│   ├── animation.h / .cpp       # Camada "viva" (piscar, respiração, olhar e reação a carinho)
+│   ├── touch_manager.h / .cpp   # Driver de toque XPT2046 com debounce, tap e long-press
+│   └── network_manager.h / .cpp # Wi-Fi, cliente MQTT e despacho de clima/tempo/touch
 │
 ├── deskbot-server/              # Cérebro do robô (Homelab / Docker)
 │   ├── docker-compose.yml       # Stack Mosquitto + Cérebro (Umbrel)
@@ -137,13 +168,16 @@ desk-bot/
 │   │   ├── core/                # Regras de negócio e modelos biológicos
 │   │   │   ├── circadian.py     # Ciclo circadiano 24h e curvas biológicas
 │   │   │   ├── decision.py      # Prioridade e máquina de estados de expressão
-│   │   │   └── humor.py         # Modelo dinâmico (energia, tédio, felicidade)
+│   │   │   ├── humor.py         # Modelo dinâmico (energia, tédio, felicidade e touch)
+│   │   │   ├── weather.py       # Integração com Open-Meteo REST API (cache e fallback)
+│   │   │   └── time_service.py  # Relógio e saudações contextuais por atividade/horário
 │   │   └── infrastructure/      # Conectores externos
 │   │       ├── config.py        # Leitura de variáveis de ambiente (.env)
-│   │       ├── mqtt_client.py   # Conexão MQTT resiliente e despacho de mensagens
+│   │       ├── mqtt_client.py   # Conexão MQTT resiliente (tópicos state, weather, time, touch)
 │   │       └── telemetry.py     # Persistência do log em CSV
 │   └── tests/                   # Testes unitários do Cérebro
-│       └── test_cerebro.py      # Testes da curva circadiana e consolidação
+│       ├── test_cerebro.py      # Testes da curva circadiana e consolidação
+│       └── test_interactivity.py# Testes de clima, relógio contextual e eventos de toque
 │
 ├── deskbot-pc/                  # Agente monitor de atividade dos PCs
 │   ├── requirements.txt         # Dependências Python (paho-mqtt, psutil)
@@ -167,21 +201,29 @@ desk-bot/
 
 No homelab, a pasta do servidor fica em `/home/umbrel/umbrel/my-apps/desk-bot/deskbot-server`.
 
-## Hardware e ligações (ILI9341 → ESP32)
+## Hardware e ligações (ILI9341 + Touch XPT2046 → ESP32)
 
-| TFT | ESP32 |
-|---|---|
-| VCC / LED | 3V3 |
-| GND | GND |
-| CS | GPIO 15 |
-| RESET | GPIO 4 |
-| DC | GPIO 2 |
-| SDI (MOSI) | GPIO 23 |
-| SCK | GPIO 18 |
-| SDO (MISO) | GPIO 19 (opcional) |
+O display ILI9341 e o controlador de toque resistivo XPT2046 compartilham o mesmo barramento SPI de alta velocidade:
+
+| Pino da Tela | Função | ESP32 | Notas |
+|---|---|---|---|
+| **VCC / LED** | Alimentação e Backlight | 3V3 | Consumo nominal ~80-120mA |
+| **GND** | Referência Elétrica | GND | Terra comum do sistema |
+| **CS** | Chip Select do Display | **GPIO 15** | Linha exclusiva do display TFT |
+| **RESET** | Reset por Hardware | **GPIO 4** | Pulso de inicialização do display |
+| **DC** | Data / Command | **GPIO 2** | Seleciona modo de dados ou comandos |
+| **SDI (MOSI)** | SPI Master Out Slave In | **GPIO 23** | Barramento compartilhado (Display + Touch) |
+| **SCK** | SPI Clock | **GPIO 18** | Barramento compartilhado (Display + Touch) |
+| **SDO (MISO)** | SPI Master In Slave Out | **GPIO 19** | Leitura de coordenadas do Touch XPT2046 |
+| **T_CS** | Chip Select do Touch | **GPIO 5** | Ativação do controlador XPT2046 |
+| **T_CLK** | Clock do Touch | **GPIO 18** | Compartilhado com SCK do display |
+| **T_DIN** | Entrada de Dados Touch | **GPIO 23** | Compartilhado com SDI/MOSI do display |
+| **T_DO** | Saída de Dados Touch | **GPIO 19** | Compartilhado com SDO/MISO do display |
+| **T_IRQ** | Interrupção de Toque | *Não conectado* | Polling não bloqueante via TFT_eSPI (40ms) |
 
 - **PlatformIO:** O projeto inclui `platformio.ini` pronto com gerenciamento automático de dependências (**TFT_eSPI**, **PubSubClient**, **ArduinoJson**). Para compilar e gravar: `pio run --target upload`.
-- **Arduino IDE:** Bibliotecas necessárias: **TFT_eSPI**, **PubSubClient**, **ArduinoJson (v7)**. Os pinos ficam no `User_Setup.h` do TFT_eSPI.
+- **Arduino IDE:** Bibliotecas necessárias: **TFT_eSPI**, **PubSubClient**, **ArduinoJson (v7)**. Os pinos e `#define TOUCH_CS 5` já estão integrados no `User_Setup.h`.
+
 
 ## Como rodar
 
@@ -305,6 +347,29 @@ Ao rodar, cada agente imprime o estado detectado e a janela em foco. Use isso pa
 - Se o MQTT cair, a animação do ESP32 trava por cerca de 2 s a cada tentativa de reconexão (a cada 4 s).
 - O IP do homelab precisa ser fixo (reserva de DHCP no roteador).
 - Os agentes dos PCs precisam ser iniciados (no Windows, via Agendador de Tarefas).
+
+---
+
+## 🚀 Evolução & Plano de Hiper-Interatividade
+
+Para transformar o DeskBot em um companheiro de mesa verdadeiramente vivo, tátil, sonoro e adaptativo com aprendizado contínuo, foi elaborado um plano arquitetural completo sem restrições de hardware:
+
+👉 **Consulte a especificação detalhada:** [docs/PLANO_DESKBOT_INTERATIVIDADE.md](docs/PLANO_DESKBOT_INTERATIVIDADE.md)
+
+### Destaques do Plano:
+- **Benchmark & Inspiração da Robótica de Mesa:** Lições de expressividade de referências globais como **EMO**, **Vector & Cozmo** (Pixar), **LOONA** e **AIBI Pocket**.
+- **Hardware Sensorial & Atuadores:**
+  - *Tato & Movimento:* Toque capacitivo no topo para carinho/acordar, IMU 6DoF (MPU6050) para tontura/reação ao ser levantado da mesa.
+  - *Presença Real:* Radar mmWave 24 GHz (HLK-LD2410) para detectar presença estática (respiração na cadeira) e sensor ToF para gestos no ar (high-five virtual).
+  - *Expressividade Mecânica:* Pescoço articulado Pan & Tilt (2 servos micro) para assentir, negar e acompanhar o monitor ativo onde você digita.
+  - *Áudio & Iluminação:* Sons procedurais estilo Wall-E/R2-D2 via amplificador I2S (MAX98357A) e aura luminosa de humor com anel de LEDs RGB WS2812B.
+- **Inteligência Artificial & Aprendizado Contínuo:**
+  - *Memória Multicamada:* Memória de Trabalho (RAM), Memória Episódica (ChromaDB vetorial) e Grafo de Conhecimento Semântico do Arthur.
+  - *Sleep Consolidation (03:00):* Consolidação noturna automática via LLM local (Ollama / Llama 3) no homelab minerando a rotina do dia.
+  - *Modelo VAD & Contextual Bandits:* Equilíbrio psicológico (Valence-Arousal-Dominance) com reforço implícito para proatividade não-invasiva.
+- **Roadmap em 4 Fases:** Cronograma incremental dividindo entregas de firmware, eletrônica e backend Docker.
+
+---
 
 ## Próximos passos
 

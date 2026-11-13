@@ -1,6 +1,14 @@
 """Gerenciamento de conexão MQTT resiliente e despacho de mensagens para o DeskBot."""
 import json
-from deskbot_server.infrastructure.config import BROKER, T_PC_WILDCARD, T_PC_LEGACY, T_BOT
+from deskbot_server.infrastructure.config import (
+    BROKER,
+    T_PC_WILDCARD,
+    T_PC_LEGACY,
+    T_BOT,
+    T_WEATHER,
+    T_TIME,
+    T_TOUCH,
+)
 
 try:
     import paho.mqtt.client as mqtt
@@ -32,8 +40,9 @@ class ClienteMQTT:
 
         if not falha:
             print(f"✓ Cérebro conectado ao MQTT em {self.broker}:{self.porta} (código: {reason_code})")
-            client.subscribe([(T_PC_WILDCARD, 0), (T_PC_LEGACY, 0)])
-            print(f"  Inscrito nos tópicos: '{T_PC_WILDCARD}' e '{T_PC_LEGACY}'")
+            topicos = [(T_PC_WILDCARD, 0), (T_PC_LEGACY, 0), (T_TOUCH, 0)]
+            client.subscribe(topicos)
+            print(f"  Inscrito nos tópicos: '{T_PC_WILDCARD}', '{T_PC_LEGACY}' e '{T_TOUCH}'")
         else:
             print(f"✗ Falha ao conectar ao broker MQTT: {reason_code}")
 
@@ -48,8 +57,24 @@ class ClienteMQTT:
         try:
             payload_str = msg.payload.decode("utf-8") if isinstance(msg.payload, (bytes, bytearray)) else msg.payload
             dados = json.loads(payload_str)
+            if not isinstance(dados, dict):
+                return
+
+            # 1. Trata eventos de toque do ESP32 / Display ILI9341
+            if msg.topic == T_TOUCH or msg.topic.startswith("desk/bot/touch"):
+                evento = dados.get("event", "tap")
+                if not isinstance(evento, str):
+                    return
+                resultado = self.cerebro.processar_toque(evento, dados=dados)
+                # Publica estado imediatamente para refletir a nova expressão/energia
+                expr = self.cerebro.escolher()
+                fase = getattr(self.cerebro, "ultima_fase", "indefinido") or "indefinido"
+                self.publicar_estado(expr, self.cerebro.energia, fase)
+                return
+
+            # 2. Trata eventos de atividade dos PCs
             estado = dados.get("state")
-            if not estado:
+            if not estado or not isinstance(estado, str):
                 return
 
             partes = msg.topic.split("/")
@@ -87,6 +112,19 @@ class ClienteMQTT:
             "phase": fase,
         }
         self._client.publish(T_BOT, json.dumps(payload), retain=True)
+
+    def publicar_clima(self, dados_clima: dict):
+        """Publica informações meteorológicas no tópico MQTT."""
+        if not dados_clima:
+            return
+        self._client.publish(T_WEATHER, json.dumps(dados_clima), retain=True)
+
+    def publicar_tempo(self, dados_tempo: dict):
+        """Publica horário, calendário e saudações contextuais no tópico MQTT."""
+        if not dados_tempo:
+            return
+        self._client.publish(T_TIME, json.dumps(dados_tempo), retain=True)
+
 
     def parar(self):
         """Finaliza o loop de eventos e desconecta do broker."""

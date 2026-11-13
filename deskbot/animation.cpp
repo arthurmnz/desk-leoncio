@@ -12,6 +12,7 @@ static float energia = 1.0;
 
 static unsigned long ultimaMsg = 0;
 static unsigned long proxPiscar = 3000, inicioPiscar = 0, proxOlhar = 0;
+static unsigned long carinhoAte = 0;
 static bool piscando = false;
 static float olharX = 0, olharY = 0, alvoX = 0, alvoY = 0;
 
@@ -26,6 +27,20 @@ void definir_alvo_expressao(int novo_alvo, float nova_energia) {
   energia = nova_energia < 0.0f ? 0.0f : (nova_energia > 1.0f ? 1.0f : nova_energia);
 }
 
+void acionar_reacao_carinho() {
+  carinhoAte = millis() + 3500;
+  piscando = true;
+  inicioPiscar = millis();
+}
+
+float obter_energia_atual() {
+  return energia;
+}
+
+int obter_alvo_expressao_atual() {
+  return alvo;
+}
+
 void registrar_atividade_servidor() {
   ultimaMsg = millis();
 }
@@ -33,7 +48,14 @@ void registrar_atividade_servidor() {
 void atualizar_frame_animacao() {
   unsigned long agora = millis();
   bool semServidor = (agora - ultimaMsg) > 90000UL;
-  const Expr& e = EXPRS[semServidor ? IDX_OFFLINE : alvo];
+  int idxAtivo = alvo;
+  if (agora < carinhoAte) {
+    idxAtivo = encontrar_expressao("feliz");
+  } else if (semServidor) {
+    idxAtivo = IDX_OFFLINE;
+  }
+  const Expr& e = EXPRS[idxAtivo];
+
 
   // Suavização em direção aos parâmetros da expressão alvo
   ch = aprox(ch, e.h, 0.18);

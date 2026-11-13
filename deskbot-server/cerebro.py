@@ -22,6 +22,8 @@ from deskbot_server.core.humor import (
     PRIORIDADE,
     ORDEM_PRIORIDADE,
 )
+from deskbot_server.core.weather import ServicoClima, descrever_weather_code
+from deskbot_server.core.time_service import ServicoTempo
 from deskbot_server.infrastructure.config import (
     carregar_env,
     BROKER,
@@ -29,6 +31,14 @@ from deskbot_server.infrastructure.config import (
     T_BOT,
     T_PC_LEGACY,
     T_PC_WILDCARD,
+    T_WEATHER,
+    T_TIME,
+    T_TOUCH,
+    LATITUDE,
+    LONGITUDE,
+    CITY_NAME,
+    WEATHER_INTERVAL,
+    USER_NAME,
 )
 from deskbot_server.__main__ import main
 
@@ -41,12 +51,23 @@ __all__ = [
     "escolher_expressao",
     "PRIORIDADE",
     "ORDEM_PRIORIDADE",
+    "ServicoClima",
+    "descrever_weather_code",
+    "ServicoTempo",
     "carregar_env",
     "BROKER",
     "LOG",
     "T_BOT",
     "T_PC_LEGACY",
     "T_PC_WILDCARD",
+    "T_WEATHER",
+    "T_TIME",
+    "T_TOUCH",
+    "LATITUDE",
+    "LONGITUDE",
+    "CITY_NAME",
+    "WEATHER_INTERVAL",
+    "USER_NAME",
     "main",
 ]
 

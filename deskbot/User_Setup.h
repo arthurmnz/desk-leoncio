@@ -7,6 +7,12 @@
 #define TFT_DC    2
 #define TFT_RST   4
 
+// Touch Screen XPT2046 integrado (SPI compartilhado)
+#define TOUCH_CS 5
+#define SPI_TOUCH_FREQUENCY 2500000
+
 #define LOAD_GLCD
 #define LOAD_FONT2
+#define LOAD_FONT4
+#define LOAD_FONT6
 #define SPI_FREQUENCY  40000000
